@@ -52,6 +52,17 @@ class LANPeerDiscovery:
         self.is_signaling_server = False
         self.priority = int(time.time() * 1000) % 10000  # Random priority based on startup time
         
+    def _get_all_ips_in_subnet(self):
+        """Generate all possible IPs in local /24 subnet except our own IP"""
+        ip_parts = self.local_ip.split('.')
+        base_ip = '.'.join(ip_parts[:3]) + '.'
+        ips = []
+        for i in range(1, 255):  # 1 to 254 valid host IPs
+            ip = base_ip + str(i)
+            if ip != self.local_ip:
+                ips.append(ip)
+        return ips
+
     def _get_local_ip(self) -> str:
         """Get the local LAN IP address"""
         try:
@@ -68,10 +79,10 @@ class LANPeerDiscovery:
 
         # Create UDP socket for broadcasting
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.socket.bind(('', self.DISCOVERY_PORT))
         self.socket.settimeout(1.0)
+
 
         logger.info(f"Peer {self.peer_id[:8]} started discovery on {self.local_ip}:{self.DISCOVERY_PORT}")
 
@@ -130,7 +141,7 @@ class LANPeerDiscovery:
             logger.error(f"Error handling discovery message: {e}")
     
     async def _broadcast_presence(self):
-        """Broadcast our presence to the LAN"""
+        """Send discovery presence to all IPs in subnet using unicast UDP"""
         while self.is_running:
             try:
                 message = {
@@ -143,15 +154,18 @@ class LANPeerDiscovery:
                         'priority': self.priority
                     }
                 }
-                
                 data = json.dumps(message).encode('utf-8')
-                
-                # Broadcast to LAN
-                broadcast_ip = self._get_broadcast_address()
-                self.socket.sendto(data, (broadcast_ip, self.DISCOVERY_PORT))
-                
+
+                ips = self._get_all_ips_in_subnet()
+
+                for ip in ips:
+                    try:
+                        self.socket.sendto(data, (ip, self.DISCOVERY_PORT))
+                    except Exception as e:
+                        logger.debug(f"Failed to send discovery to {ip}: {e}")
+
                 await asyncio.sleep(self.BROADCAST_INTERVAL)
-                
+
             except Exception as e:
                 logger.error(f"Error broadcasting presence: {e}")
                 await asyncio.sleep(self.BROADCAST_INTERVAL)
