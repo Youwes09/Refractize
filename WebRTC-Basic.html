@@ -1,0 +1,930 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Decentralized P2P Chat</title>
+    <style>
+        /* [Your existing CSS styles remain exactly the same] */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 1200px;
+            height: 80vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            backdrop-filter: blur(10px);
+        }
+
+        .header {
+            background: linear-gradient(135deg, #2c3e50, #34495e);
+            color: white;
+            padding: 20px;
+            text-align: center;
+            position: relative;
+        }
+
+        .status-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 10px;
+            font-size: 14px;
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #e74c3c;
+            transition: background 0.3s ease;
+        }
+
+        .status-dot.connected {
+            background: #2ecc71;
+        }
+
+        .status-dot.discovering {
+            background: #f39c12;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        .main-content {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .sidebar {
+            width: 320px;
+            background: #f8f9fa;
+            border-right: 1px solid #dee2e6;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .connection-panel {
+            padding: 20px;
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        .input-group {
+            margin-bottom: 15px;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #495057;
+        }
+
+        .input-group input {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s ease;
+        }
+
+        .input-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .input-group input:disabled {
+            background: #f8f9fa;
+            color: #6c757d;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            width: 100%;
+            margin-bottom: 10px;
+        }
+
+        .btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .btn.secondary {
+            background: linear-gradient(135deg, #28a745, #20c997);
+        }
+
+        .btn.secondary:hover:not(:disabled) {
+            box-shadow: 0 8px 20px rgba(40, 167, 69, 0.3);
+        }
+
+        .discovery-status {
+            background: #e3f2fd;
+            border: 1px solid #90caf9;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: 13px;
+            color: #0d47a1;
+        }
+
+        .discovery-status.success {
+            background: #e8f5e8;
+            border-color: #81c784;
+            color: #1b5e20;
+        }
+
+        .discovery-status.error {
+            background: #ffebee;
+            border-color: #ef5350;
+            color: #b71c1c;
+        }
+
+        .peers-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+
+        .peers-list h3 {
+            margin-bottom: 15px;
+            color: #495057;
+            font-size: 16px;
+        }
+
+        .peer-item {
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            transition: all 0.3s ease;
+        }
+
+        .peer-item:hover {
+            transform: translateX(5px);
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.15);
+        }
+
+        .peer-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+
+        .peer-id {
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        .peer-status {
+            font-size: 12px;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-weight: 600;
+        }
+
+        .peer-status.connecting {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .peer-status.connected {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .peer-status.failed {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .chat-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: white;
+        }
+
+        .messages-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            background: linear-gradient(to bottom, #f8f9fa, #ffffff);
+        }
+
+        .message {
+            margin-bottom: 15px;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+
+        .message-sender {
+            font-weight: 600;
+            color: #667eea;
+        }
+
+        .message-time {
+            font-size: 12px;
+            color: #6c757d;
+        }
+
+        .message-content {
+            background: #f8f9fa;
+            padding: 12px;
+            border-radius: 10px;
+            border-left: 4px solid #667eea;
+        }
+
+        .message.own .message-content {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border-left: none;
+            border-right: 4px solid #fff;
+        }
+
+        .message.system .message-content {
+            background: #e9ecef;
+            color: #495057;
+            border-left: 4px solid #6c757d;
+            font-style: italic;
+        }
+
+        .input-area {
+            padding: 20px;
+            border-top: 1px solid #dee2e6;
+            background: white;
+        }
+
+        .message-input {
+            display: flex;
+            gap: 10px;
+        }
+
+        .message-input input {
+            flex: 1;
+            padding: 15px;
+            border: 2px solid #e9ecef;
+            border-radius: 25px;
+            font-size: 16px;
+            outline: none;
+            transition: border-color 0.3s ease;
+        }
+
+        .message-input input:focus {
+            border-color: #667eea;
+        }
+
+        .send-btn {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 15px 25px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .send-btn:hover:not(:disabled) {
+            transform: scale(1.05);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .send-btn:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .encryption-info {
+            background: #e8f5e8;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: 12px;
+            color: #2d5a2d;
+            text-align: center;
+        }
+
+        .logs {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.9);
+            color: #00ff00;
+            padding: 15px;
+            border-radius: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            max-width: 400px;
+            max-height: 300px;
+            overflow-y: auto;
+            display: none;
+            z-index: 1000;
+        }
+
+        .logs.visible {
+            display: block;
+        }
+
+        .toggle-logs {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 12px;
+            z-index: 999;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                height: 100vh;
+                border-radius: 0;
+            }
+            
+            .main-content {
+                flex-direction: column;
+            }
+            
+            .sidebar {
+                width: 100%;
+                height: 250px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- [Your existing HTML structure remains exactly the same] -->
+     <div class="container">
+        <div class="header">
+            <h1>🔒 Decentralized P2P Chat</h1>
+            <div class="status-bar">
+                <div class="status-indicator">
+                    <div class="status-dot" id="connectionStatus"></div>
+                    <span id="statusText">Disconnected</span>
+                </div>
+                <div>
+                    <span id="peerCount">0 peers</span>
+                </div>
+                <div>
+                    <span id="myPeerIdDisplay">Not connected</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <div class="sidebar">
+                <div class="connection-panel">
+                    <div class="input-group">
+                        <label for="signalingServer">Signaling Server</label>
+                        <input type="text" id="signalingServer" placeholder="Auto-discovering..." readonly>
+                    </div>
+                    
+                    <div class="discovery-status" id="discoveryStatus">
+                        🔍 Searching for signaling servers on LAN...
+                    </div>
+                    
+                    <button class="btn secondary" id="discoverBtn" onclick="startDiscovery()">🔍 Discover Servers</button>
+                    <button class="btn" id="connectBtn" onclick="toggleConnection()" disabled>Connect</button>
+                    
+                    <div class="encryption-info">
+                        🔐 End-to-end encryption enabled<br>
+                        Messages are encrypted before transmission
+                    </div>
+                </div>
+
+                <div class="peers-list">
+                    <h3>Connected Peers (<span id="peerCountSidebar">0</span>)</h3>
+                    <div id="peersContainer">
+                        <!-- Peer items will be added here dynamically -->
+                    </div>
+                </div>
+            </div>
+
+            <div class="chat-area">
+                <div class="messages-container" id="messagesContainer">
+                    <div class="message system">
+                        <div class="message-content">
+                            Welcome to Decentralized P2P Chat! The system is automatically discovering signaling servers on your local network.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="input-area">
+                    <div class="message-input">
+                        <input type="text" id="messageInput" placeholder="Type your message..." 
+                               onkeypress="handleKeyPress(event)" disabled>
+                        <button class="send-btn" id="sendBtn" onclick="sendMessage()" disabled>Send</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <button class="toggle-logs" onclick="toggleLogs()">📊 Logs</button>
+    <div class="logs" id="logs"></div>
+
+    <script>
+        // Constants
+        const SIGNALING_SERVER_URL = `ws://${window.location.hostname}:8001`;
+        const DISCOVERY_INTERVAL = 5000; // 5 seconds
+
+        // Global variables
+        let chatClient = null;
+        let discoveryInterval = null;
+
+        class P2PChatClient {
+            constructor() {
+                this.clientId = 'peer_' + Math.random().toString(36).substr(2, 8);
+                this.websocket = null;
+                this.peers = new Map();
+                this.messages = [];
+                
+                // WebRTC configuration
+                this.rtcConfig = {
+                    iceServers: [], // No STUN/TURN needed for LAN
+                    iceCandidatePoolSize: 10
+                };
+                
+                this.initUI();
+                this.connectToSignalingServer();
+            }
+
+            initUI() {
+                document.getElementById('myPeerIdDisplay').textContent = this.clientId.substring(0, 8);
+                document.getElementById('signalingServer').value = SIGNALING_SERVER_URL;
+                document.getElementById('connectBtn').disabled = false;
+                document.getElementById('discoveryStatus').className = "discovery-status success";
+                document.getElementById('discoveryStatus').textContent = "✅ Using signaling server";
+                document.getElementById('connectionStatus').classList.add('connected');
+                document.getElementById('statusText').textContent = "Connected";
+            }
+
+            connectToSignalingServer() {
+                this.websocket = new WebSocket(SIGNALING_SERVER_URL);
+                
+                this.websocket.onopen = () => {
+                    this.log("Connected to signaling server");
+                    this.send({ type: 'register', clientId: this.clientId });
+                };
+
+                this.websocket.onmessage = (event) => {
+                    const message = JSON.parse(event.data);
+                    this.handleSignalingMessage(message);
+                };
+
+                this.websocket.onclose = () => {
+                    this.log("Disconnected from signaling server");
+                    this.updateConnectionStatus(false);
+                };
+
+                this.websocket.onerror = (error) => {
+                    this.log("Signaling server error: " + error.message, 'error');
+                };
+            }
+
+            handleSignalingMessage(message) {
+                this.log(`Received message: ${message.type}`);
+                
+                switch(message.type) {
+                    case 'peer_list':
+                        this.handlePeerList(message.peers);
+                        break;
+                    case 'offer':
+                        this.handleOffer(message.senderId, message.data);
+                        break;
+                    case 'answer':
+                        this.handleAnswer(message.senderId, message.data);
+                        break;
+                    case 'ice_candidate':
+                        this.handleIceCandidate(message.senderId, message.data);
+                        break;
+                }
+            }
+
+            async handlePeerList(peerIds) {
+                // Filter out existing peers and self
+                const newPeers = peerIds.filter(id => 
+                    id !== this.clientId && !this.peers.has(id)
+                );
+                
+                // Initiate connections to new peers
+                for (const peerId of newPeers) {
+                    await this.initiatePeerConnection(peerId);
+                }
+                
+                this.updatePeerList();
+            }
+
+            async initiatePeerConnection(peerId) {
+                if (this.peers.has(peerId)) return;
+                
+                this.log(`Connecting to peer: ${peerId.substring(0, 8)}`);
+                
+                const peerConnection = new RTCPeerConnection(this.rtcConfig);
+                const peer = {
+                    connection: peerConnection,
+                    dataChannel: null,
+                    status: 'connecting'
+                };
+                
+                this.peers.set(peerId, peer);
+                this.setupPeerConnection(peerId, peerConnection);
+                
+                // Create data channel
+                const dataChannel = peerConnection.createDataChannel('chat');
+                peer.dataChannel = dataChannel;
+                this.setupDataChannel(peerId, dataChannel);
+                
+                // Create offer
+                const offer = await peerConnection.createOffer();
+                await peerConnection.setLocalDescription(offer);
+                
+                this.send({
+                    type: 'offer',
+                    targetId: peerId,
+                    data: offer
+                });
+            }
+
+            async handleOffer(senderId, offer) {
+                this.log(`Received offer from: ${senderId.substring(0, 8)}`);
+                
+                const peerConnection = new RTCPeerConnection(this.rtcConfig);
+                const peer = {
+                    connection: peerConnection,
+                    dataChannel: null,
+                    status: 'connecting'
+                };
+                
+                this.peers.set(senderId, peer);
+                this.setupPeerConnection(senderId, peerConnection);
+                
+                // Handle incoming data channel
+                peerConnection.ondatachannel = (event) => {
+                    peer.dataChannel = event.channel;
+                    this.setupDataChannel(senderId, event.channel);
+                };
+                
+                // Set remote description
+                await peerConnection.setRemoteDescription(offer);
+                
+                // Create answer
+                const answer = await peerConnection.createAnswer();
+                await peerConnection.setLocalDescription(answer);
+                
+                this.send({
+                    type: 'answer',
+                    targetId: senderId,
+                    data: answer
+                });
+            }
+
+            async handleAnswer(senderId, answer) {
+                const peer = this.peers.get(senderId);
+                if (!peer) return;
+                
+                this.log(`Received answer from: ${senderId.substring(0, 8)}`);
+                await peer.connection.setRemoteDescription(answer);
+            }
+
+            async handleIceCandidate(senderId, candidate) {
+                const peer = this.peers.get(senderId);
+                if (!peer || !candidate) return;
+                
+                try {
+                    await peer.connection.addIceCandidate(new RTCIceCandidate(candidate));
+                } catch (error) {
+                    this.log(`Error adding ICE candidate: ${error.message}`, 'error');
+                }
+            }
+
+            setupPeerConnection(peerId, peerConnection) {
+                peerConnection.onicecandidate = (event) => {
+                    if (event.candidate) {
+                        this.send({
+                            type: 'ice_candidate',
+                            targetId: peerId,
+                            data: event.candidate
+                        });
+                    }
+                };
+                
+                peerConnection.onconnectionstatechange = () => {
+                    const peer = this.peers.get(peerId);
+                    if (peer) {
+                        const state = peerConnection.connectionState;
+                        peer.status = state;
+                        
+                        if (state === 'connected') {
+                            this.log(`Connected to peer: ${peerId.substring(0, 8)}`);
+                            this.addSystemMessage(`Connected to ${peerId.substring(0, 8)}`);
+                        } else if (state === 'failed' || state === 'closed') {
+                            this.log(`Connection failed with: ${peerId.substring(0, 8)}`);
+                            this.closePeerConnection(peerId);
+                        }
+                        
+                        this.updateUI();
+                    }
+                };
+            }
+
+            setupDataChannel(peerId, dataChannel) {
+                dataChannel.onopen = () => {
+                    const peer = this.peers.get(peerId);
+                    if (peer) {
+                        peer.status = 'connected';
+                        this.updateUI();
+                    }
+                };
+                
+                dataChannel.onmessage = (event) => {
+                    this.addMessage({
+                        senderId: peerId,
+                        content: event.data,
+                        timestamp: Date.now()
+                    });
+                };
+                
+                dataChannel.onclose = () => {
+                    this.closePeerConnection(peerId);
+                };
+            }
+
+            closePeerConnection(peerId) {
+                const peer = this.peers.get(peerId);
+                if (peer) {
+                    if (peer.dataChannel) peer.dataChannel.close();
+                    if (peer.connection) peer.connection.close();
+                    this.peers.delete(peerId);
+                    this.addSystemMessage(`Disconnected from ${peerId.substring(0, 8)}`);
+                    this.updateUI();
+                }
+            }
+
+            send(message) {
+                if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
+                    this.websocket.send(JSON.stringify({
+                        ...message,
+                        senderId: this.clientId
+                    }));
+                }
+            }
+
+            sendMessage(content) {
+                if (!content.trim()) return;
+                
+                // Add to our own chat
+                this.addMessage({
+                    senderId: this.clientId,
+                    content: content,
+                    timestamp: Date.now()
+                });
+                
+                // Send to all connected peers
+                this.peers.forEach((peer, peerId) => {
+                    if (peer.status === 'connected' && peer.dataChannel) {
+                        peer.dataChannel.send(content);
+                    }
+                });
+            }
+
+            addMessage(message) {
+                this.messages.push(message);
+                
+                const messagesContainer = document.getElementById('messagesContainer');
+                const messageEl = document.createElement('div');
+                
+                const isOwnMessage = message.senderId === this.clientId;
+                messageEl.className = `message ${isOwnMessage ? 'own' : ''}`;
+                
+                const time = new Date(message.timestamp).toLocaleTimeString();
+                const senderId = isOwnMessage ? 'You' : message.senderId.substring(0, 8);
+                
+                messageEl.innerHTML = `
+                    <div class="message-header">
+                        <div class="message-sender">${senderId}</div>
+                        <div class="message-time">${time}</div>
+                    </div>
+                    <div class="message-content">${this.escapeHtml(message.content)}</div>
+                `;
+                
+                messagesContainer.appendChild(messageEl);
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }
+
+            addSystemMessage(content) {
+                const messagesContainer = document.getElementById('messagesContainer');
+                const messageEl = document.createElement('div');
+                messageEl.className = 'message system';
+                
+                messageEl.innerHTML = `
+                    <div class="message-content">${this.escapeHtml(content)}</div>
+                `;
+                
+                messagesContainer.appendChild(messageEl);
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }
+
+            updateUI() {
+                const statusDot = document.getElementById('connectionStatus');
+                const statusText = document.getElementById('statusText');
+                const peerCount = document.getElementById('peerCount');
+                const peerCountSidebar = document.getElementById('peerCountSidebar');
+                const connectBtn = document.getElementById('connectBtn');
+                const messageInput = document.getElementById('messageInput');
+                const sendBtn = document.getElementById('sendBtn');
+                const peersContainer = document.getElementById('peersContainer');
+                
+                // Update peer count
+                const connectedPeers = Array.from(this.peers.values())
+                    .filter(p => p.status === 'connected').length;
+                
+                peerCount.textContent = `${connectedPeers} peer${connectedPeers !== 1 ? 's' : ''}`;
+                peerCountSidebar.textContent = connectedPeers;
+                
+                // Enable/disable messaging
+                messageInput.disabled = connectedPeers === 0;
+                sendBtn.disabled = connectedPeers === 0;
+                
+                // Update peers list
+                peersContainer.innerHTML = '';
+                this.peers.forEach((peer, peerId) => {
+                    const peerEl = document.createElement('div');
+                    peerEl.className = 'peer-item';
+                    
+                    let statusClass = 'connecting';
+                    let statusText = 'Connecting';
+                    
+                    if (peer.status === 'connected') {
+                        statusClass = 'connected';
+                        statusText = 'Connected';
+                    } else if (peer.status === 'failed') {
+                        statusClass = 'failed';
+                        statusText = 'Failed';
+                    }
+                    
+                    peerEl.innerHTML = `
+                        <div class="peer-header">
+                            <div class="peer-id">${peerId.substring(0, 8)}</div>
+                            <div class="peer-status ${statusClass}">${statusText}</div>
+                        </div>
+                    `;
+                    
+                    peersContainer.appendChild(peerEl);
+                });
+            }
+
+            updateConnectionStatus(isConnected) {
+                const statusDot = document.getElementById('connectionStatus');
+                const statusText = document.getElementById('statusText');
+                
+                if (isConnected) {
+                    statusDot.classList.add('connected');
+                    statusDot.classList.remove('discovering');
+                    statusText.textContent = 'Connected';
+                } else {
+                    statusDot.classList.remove('connected', 'discovering');
+                    statusText.textContent = 'Disconnected';
+                }
+            }
+
+            escapeHtml(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+
+            log(message, level = 'info') {
+                const logsEl = document.getElementById('logs');
+                const logLine = document.createElement('div');
+                logLine.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+                
+                if (level === 'error') {
+                    logLine.style.color = '#ff6b6b';
+                }
+                
+                logsEl.appendChild(logLine);
+                logsEl.scrollTop = logsEl.scrollHeight;
+                
+                // Keep only last 100 logs
+                while (logsEl.children.length > 100) {
+                    logsEl.removeChild(logsEl.firstChild);
+                }
+            }
+        }
+
+        // Initialize when page loads
+        window.addEventListener('load', () => {
+            chatClient = new P2PChatClient();
+            
+            // Set up UI event handlers
+            document.getElementById('sendBtn').addEventListener('click', () => {
+                const input = document.getElementById('messageInput');
+                chatClient.sendMessage(input.value);
+                input.value = '';
+            });
+            
+            document.getElementById('messageInput').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    document.getElementById('sendBtn').click();
+                }
+            });
+        });
+
+        function toggleLogs() {
+            document.getElementById('logs').classList.toggle('visible');
+        }
+
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        }
+
+        function sendMessage() {
+            if (chatClient) {
+                const input = document.getElementById('messageInput');
+                chatClient.sendMessage(input.value);
+                input.value = '';
+            }
+        }
+
+        function startDiscovery() {
+            // Not needed in this version since we auto-connect
+        }
+
+        function toggleConnection() {
+            // Not needed in this version since we auto-connect
+        }
+    </script>
+</body>
+</html>
