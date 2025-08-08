@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Simple WebRTC Signaling Test</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 20px; }
+  #log { white-space: pre-wrap; border: 1px solid #ccc; padding: 10px; height: 300px; overflow-y: scroll; }
+  input, button { padding: 8px; margin: 5px 0; }
+</style>
+</head>
+<body>
+
+<h2>WebSocket Signaling Test</h2>
+
+<label for="serverUrl">Signaling Server WebSocket URL:</label><br />
+<input type="text" id="serverUrl" value="ws://localhost:8001" style="width: 300px;" />
+<button id="connectBtn">Connect</button>
+
+<div id="log"></div>
+
+<script>
+  const logDiv = document.getElementById('log');
+  const serverUrlInput = document.getElementById('serverUrl');
+  const connectBtn = document.getElementById('connectBtn');
+
+  let ws = null;
+
+  function log(msg) {
+    console.log(msg);
+    logDiv.textContent += msg + "\n";
+    logDiv.scrollTop = logDiv.scrollHeight;
+  }
+
+  connectBtn.onclick = () => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      log("Already connected.");
+      return;
+    }
+
+    const url = serverUrlInput.value.trim();
+    if (!url) {
+      alert("Please enter a WebSocket server URL");
+      return;
+    }
+
+    log(`Connecting to ${url} ...`);
+    ws = new WebSocket(url);
+
+    ws.onopen = () => {
+      log("WebSocket connection opened.");
+      // Send a simple register message (adjust as your server expects)
+      const registerMsg = {
+        type: "register",
+        clientId: "test-client-" + Math.floor(Math.random() * 1000)
+      };
+      ws.send(JSON.stringify(registerMsg));
+      log("Sent register message: " + JSON.stringify(registerMsg));
+    };
+
+    ws.onmessage = (event) => {
+      log("Received: " + event.data);
+    };
+
+    ws.onclose = () => {
+      log("WebSocket connection closed.");
+    };
+
+    ws.onerror = (err) => {
+      log("WebSocket error: " + err.message);
+    };
+  };
+</script>
+
+</body>
+</html>
