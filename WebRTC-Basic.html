@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Decentralized P2P Chat</title>
     <style>
-        /* [Your existing CSS styles remain exactly the same] */
         * {
             margin: 0;
             padding: 0;
@@ -422,8 +421,7 @@
     </style>
 </head>
 <body>
-    <!-- [Your existing HTML structure remains exactly the same] -->
-     <div class="container">
+    <div class="container">
         <div class="header">
             <h1>🔒 Decentralized P2P Chat</h1>
             <div class="status-bar">
@@ -480,9 +478,8 @@
 
                 <div class="input-area">
                     <div class="message-input">
-                        <input type="text" id="messageInput" placeholder="Type your message..." 
-                               onkeypress="handleKeyPress(event)" disabled>
-                        <button class="send-btn" id="sendBtn" onclick="sendMessage()" disabled>Send</button>
+                        <input type="text" id="messageInput" placeholder="Connecting..." autocomplete="off" disabled>
+                        <button class="send-btn" id="sendBtn" disabled>Send</button>
                     </div>
                 </div>
             </div>
@@ -493,438 +490,198 @@
     <div class="logs" id="logs"></div>
 
     <script>
-        // Constants
-        const SIGNALING_SERVER_URL = `ws://${window.location.hostname}:8001`;
-        const DISCOVERY_INTERVAL = 5000; // 5 seconds
+    // Configuration
+    const SIGNALING_SERVER = "ws://192.168.1.211:8001";
+    const clientId = "user-" + Math.random().toString(36).substr(2, 8);
+    const RECONNECT_DELAY = 3000;
 
-        // Global variables
-        let chatClient = null;
-        let discoveryInterval = null;
+    // State
+    let socket = null;
+    let peerList = [];
+    let isConnected = false;
 
-        class P2PChatClient {
-            constructor() {
-                this.clientId = 'peer_' + Math.random().toString(36).substr(2, 8);
-                this.websocket = null;
-                this.peers = new Map();
-                this.messages = [];
-                
-                // WebRTC configuration
-                this.rtcConfig = {
-                    iceServers: [], // No STUN/TURN needed for LAN
-                    iceCandidatePoolSize: 10
-                };
-                
-                this.initUI();
-                this.connectToSignalingServer();
+    // Connection Management
+    function connect() {
+        socket = new WebSocket(SIGNALING_SERVER);
+        
+        socket.onopen = () => {
+            isConnected = true;
+            updateStatus(true, 'Connected');
+            socket.send(JSON.stringify({
+                type: "register",
+                clientId: clientId
+            }));
+            addSystemMessage("Connected to server");
+        };
+
+        socket.onerror = (error) => {
+            isConnected = false;
+            updateStatus(false, 'Connection error');
+            setTimeout(connect, RECONNECT_DELAY);
+        };
+
+        socket.onclose = () => {
+            isConnected = false;
+            updateStatus(false, 'Disconnected');
+            setTimeout(connect, RECONNECT_DELAY);
+        };
+
+        socket.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                handleServerMessage(data);
+            } catch (error) {
+                console.error("Message parse error:", error);
             }
+        };
+    }
 
-            initUI() {
-                document.getElementById('myPeerIdDisplay').textContent = this.clientId.substring(0, 8);
-                document.getElementById('signalingServer').value = SIGNALING_SERVER_URL;
-                document.getElementById('connectBtn').disabled = false;
-                document.getElementById('discoveryStatus').className = "discovery-status success";
-                document.getElementById('discoveryStatus').textContent = "✅ Using signaling server";
-                document.getElementById('connectionStatus').classList.add('connected');
-                document.getElementById('statusText').textContent = "Connected";
-            }
-
-            connectToSignalingServer() {
-                this.websocket = new WebSocket(SIGNALING_SERVER_URL);
+    function handleServerMessage(data) {
+        switch (data.type) {
+            case "welcome":
+                // Initial connection data
+                peerList = data.peers;
+                updatePeerList();
                 
-                this.websocket.onopen = () => {
-                    this.log("Connected to signaling server");
-                    this.send({ type: 'register', clientId: this.clientId });
-                };
-
-                this.websocket.onmessage = (event) => {
-                    const message = JSON.parse(event.data);
-                    this.handleSignalingMessage(message);
-                };
-
-                this.websocket.onclose = () => {
-                    this.log("Disconnected from signaling server");
-                    this.updateConnectionStatus(false);
-                };
-
-                this.websocket.onerror = (error) => {
-                    this.log("Signaling server error: " + error.message, 'error');
-                };
-            }
-
-            handleSignalingMessage(message) {
-                this.log(`Received message: ${message.type}`);
-                
-                switch(message.type) {
-                    case 'peer_list':
-                        this.handlePeerList(message.peers);
-                        break;
-                    case 'offer':
-                        this.handleOffer(message.senderId, message.data);
-                        break;
-                    case 'answer':
-                        this.handleAnswer(message.senderId, message.data);
-                        break;
-                    case 'ice_candidate':
-                        this.handleIceCandidate(message.senderId, message.data);
-                        break;
-                }
-            }
-
-            async handlePeerList(peerIds) {
-                // Filter out existing peers and self
-                const newPeers = peerIds.filter(id => 
-                    id !== this.clientId && !this.peers.has(id)
-                );
-                
-                // Initiate connections to new peers
-                for (const peerId of newPeers) {
-                    await this.initiatePeerConnection(peerId);
-                }
-                
-                this.updatePeerList();
-            }
-
-            async initiatePeerConnection(peerId) {
-                if (this.peers.has(peerId)) return;
-                
-                this.log(`Connecting to peer: ${peerId.substring(0, 8)}`);
-                
-                const peerConnection = new RTCPeerConnection(this.rtcConfig);
-                const peer = {
-                    connection: peerConnection,
-                    dataChannel: null,
-                    status: 'connecting'
-                };
-                
-                this.peers.set(peerId, peer);
-                this.setupPeerConnection(peerId, peerConnection);
-                
-                // Create data channel
-                const dataChannel = peerConnection.createDataChannel('chat');
-                peer.dataChannel = dataChannel;
-                this.setupDataChannel(peerId, dataChannel);
-                
-                // Create offer
-                const offer = await peerConnection.createOffer();
-                await peerConnection.setLocalDescription(offer);
-                
-                this.send({
-                    type: 'offer',
-                    targetId: peerId,
-                    data: offer
+                // Display message history
+                data.history.forEach(msg => {
+                    if (msg.sender_id !== clientId) {
+                        addMessage({
+                            senderId: msg.sender_id,
+                            content: msg.content,
+                            isOwn: false,
+                            timestamp: msg.timestamp * 1000
+                        }, false);
+                    }
                 });
-            }
-
-            async handleOffer(senderId, offer) {
-                this.log(`Received offer from: ${senderId.substring(0, 8)}`);
+                break;
                 
-                const peerConnection = new RTCPeerConnection(this.rtcConfig);
-                const peer = {
-                    connection: peerConnection,
-                    dataChannel: null,
-                    status: 'connecting'
-                };
-                
-                this.peers.set(senderId, peer);
-                this.setupPeerConnection(senderId, peerConnection);
-                
-                // Handle incoming data channel
-                peerConnection.ondatachannel = (event) => {
-                    peer.dataChannel = event.channel;
-                    this.setupDataChannel(senderId, event.channel);
-                };
-                
-                // Set remote description
-                await peerConnection.setRemoteDescription(offer);
-                
-                // Create answer
-                const answer = await peerConnection.createAnswer();
-                await peerConnection.setLocalDescription(answer);
-                
-                this.send({
-                    type: 'answer',
-                    targetId: senderId,
-                    data: answer
-                });
-            }
-
-            async handleAnswer(senderId, answer) {
-                const peer = this.peers.get(senderId);
-                if (!peer) return;
-                
-                this.log(`Received answer from: ${senderId.substring(0, 8)}`);
-                await peer.connection.setRemoteDescription(answer);
-            }
-
-            async handleIceCandidate(senderId, candidate) {
-                const peer = this.peers.get(senderId);
-                if (!peer || !candidate) return;
-                
-                try {
-                    await peer.connection.addIceCandidate(new RTCIceCandidate(candidate));
-                } catch (error) {
-                    this.log(`Error adding ICE candidate: ${error.message}`, 'error');
+            case "peer_joined":
+                if (!peerList.includes(data.peerId)) {
+                    peerList.push(data.peerId);
+                    updatePeerList();
+                    addSystemMessage(`${data.peerId.substring(0, 8)} connected`);
                 }
-            }
-
-            setupPeerConnection(peerId, peerConnection) {
-                peerConnection.onicecandidate = (event) => {
-                    if (event.candidate) {
-                        this.send({
-                            type: 'ice_candidate',
-                            targetId: peerId,
-                            data: event.candidate
-                        });
-                    }
-                };
+                break;
                 
-                peerConnection.onconnectionstatechange = () => {
-                    const peer = this.peers.get(peerId);
-                    if (peer) {
-                        const state = peerConnection.connectionState;
-                        peer.status = state;
-                        
-                        if (state === 'connected') {
-                            this.log(`Connected to peer: ${peerId.substring(0, 8)}`);
-                            this.addSystemMessage(`Connected to ${peerId.substring(0, 8)}`);
-                        } else if (state === 'failed' || state === 'closed') {
-                            this.log(`Connection failed with: ${peerId.substring(0, 8)}`);
-                            this.closePeerConnection(peerId);
-                        }
-                        
-                        this.updateUI();
-                    }
-                };
-            }
-
-            setupDataChannel(peerId, dataChannel) {
-                dataChannel.onopen = () => {
-                    const peer = this.peers.get(peerId);
-                    if (peer) {
-                        peer.status = 'connected';
-                        this.updateUI();
-                    }
-                };
+            case "peer_left":
+                peerList = peerList.filter(id => id !== data.peerId);
+                updatePeerList();
+                addSystemMessage(`${data.peerId.substring(0, 8)} disconnected`);
+                break;
                 
-                dataChannel.onmessage = (event) => {
-                    this.addMessage({
-                        senderId: peerId,
-                        content: event.data,
-                        timestamp: Date.now()
+            case "chat":
+                if (data.senderId !== clientId) {
+                    addMessage({
+                        senderId: data.senderId,
+                        content: data.message,
+                        isOwn: false,
+                        timestamp: data.timestamp * 1000
                     });
-                };
-                
-                dataChannel.onclose = () => {
-                    this.closePeerConnection(peerId);
-                };
-            }
-
-            closePeerConnection(peerId) {
-                const peer = this.peers.get(peerId);
-                if (peer) {
-                    if (peer.dataChannel) peer.dataChannel.close();
-                    if (peer.connection) peer.connection.close();
-                    this.peers.delete(peerId);
-                    this.addSystemMessage(`Disconnected from ${peerId.substring(0, 8)}`);
-                    this.updateUI();
                 }
-            }
+                break;
+        }
+    }
 
-            send(message) {
-                if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
-                    this.websocket.send(JSON.stringify({
-                        ...message,
-                        senderId: this.clientId
-                    }));
-                }
-            }
+    // UI Updates
+    function updateStatus(connected, message) {
+        const statusDot = document.getElementById('connectionStatus');
+        const statusText = document.getElementById('statusText');
+        const messageInput = document.getElementById('messageInput');
+        const sendBtn = document.getElementById('sendBtn');
+        
+        statusDot.classList.toggle('connected', connected);
+        statusDot.classList.toggle('disconnected', !connected);
+        statusText.textContent = message;
+        messageInput.disabled = !connected;
+        sendBtn.disabled = !connected;
+    }
 
-            sendMessage(content) {
-                if (!content.trim()) return;
-                
-                // Add to our own chat
-                this.addMessage({
-                    senderId: this.clientId,
-                    content: content,
-                    timestamp: Date.now()
-                });
-                
-                // Send to all connected peers
-                this.peers.forEach((peer, peerId) => {
-                    if (peer.status === 'connected' && peer.dataChannel) {
-                        peer.dataChannel.send(content);
-                    }
-                });
-            }
-
-            addMessage(message) {
-                this.messages.push(message);
-                
-                const messagesContainer = document.getElementById('messagesContainer');
-                const messageEl = document.createElement('div');
-                
-                const isOwnMessage = message.senderId === this.clientId;
-                messageEl.className = `message ${isOwnMessage ? 'own' : ''}`;
-                
-                const time = new Date(message.timestamp).toLocaleTimeString();
-                const senderId = isOwnMessage ? 'You' : message.senderId.substring(0, 8);
-                
-                messageEl.innerHTML = `
-                    <div class="message-header">
-                        <div class="message-sender">${senderId}</div>
-                        <div class="message-time">${time}</div>
+    function updatePeerList() {
+        const peersContainer = document.getElementById('peersContainer');
+        const peerCount = peerList.length;
+        
+        document.getElementById('peerCount').textContent = `${peerCount} peers`;
+        document.getElementById('peerCountSidebar').textContent = peerCount;
+        
+        peersContainer.innerHTML = peerList.length ? 
+            peerList.map(id => `
+                <div class="peer-item">
+                    <div class="peer-header">
+                        <div class="peer-id">${id.substring(0, 8)}</div>
+                        <div class="peer-status connected">Connected</div>
                     </div>
-                    <div class="message-content">${this.escapeHtml(message.content)}</div>
-                `;
-                
-                messagesContainer.appendChild(messageEl);
-                messagesContainer.scrollTop = messagesContainer.scrollHeight;
-            }
+                </div>
+            `).join('') : 
+            '<div style="text-align: center; color: #6c757d; font-style: italic;">No other users connected</div>';
+    }
 
-            addSystemMessage(content) {
-                const messagesContainer = document.getElementById('messagesContainer');
-                const messageEl = document.createElement('div');
-                messageEl.className = 'message system';
-                
-                messageEl.innerHTML = `
-                    <div class="message-content">${this.escapeHtml(content)}</div>
-                `;
-                
-                messagesContainer.appendChild(messageEl);
-                messagesContainer.scrollTop = messagesContainer.scrollHeight;
-            }
-
-            updateUI() {
-                const statusDot = document.getElementById('connectionStatus');
-                const statusText = document.getElementById('statusText');
-                const peerCount = document.getElementById('peerCount');
-                const peerCountSidebar = document.getElementById('peerCountSidebar');
-                const connectBtn = document.getElementById('connectBtn');
-                const messageInput = document.getElementById('messageInput');
-                const sendBtn = document.getElementById('sendBtn');
-                const peersContainer = document.getElementById('peersContainer');
-                
-                // Update peer count
-                const connectedPeers = Array.from(this.peers.values())
-                    .filter(p => p.status === 'connected').length;
-                
-                peerCount.textContent = `${connectedPeers} peer${connectedPeers !== 1 ? 's' : ''}`;
-                peerCountSidebar.textContent = connectedPeers;
-                
-                // Enable/disable messaging
-                messageInput.disabled = connectedPeers === 0;
-                sendBtn.disabled = connectedPeers === 0;
-                
-                // Update peers list
-                peersContainer.innerHTML = '';
-                this.peers.forEach((peer, peerId) => {
-                    const peerEl = document.createElement('div');
-                    peerEl.className = 'peer-item';
-                    
-                    let statusClass = 'connecting';
-                    let statusText = 'Connecting';
-                    
-                    if (peer.status === 'connected') {
-                        statusClass = 'connected';
-                        statusText = 'Connected';
-                    } else if (peer.status === 'failed') {
-                        statusClass = 'failed';
-                        statusText = 'Failed';
-                    }
-                    
-                    peerEl.innerHTML = `
-                        <div class="peer-header">
-                            <div class="peer-id">${peerId.substring(0, 8)}</div>
-                            <div class="peer-status ${statusClass}">${statusText}</div>
-                        </div>
-                    `;
-                    
-                    peersContainer.appendChild(peerEl);
-                });
-            }
-
-            updateConnectionStatus(isConnected) {
-                const statusDot = document.getElementById('connectionStatus');
-                const statusText = document.getElementById('statusText');
-                
-                if (isConnected) {
-                    statusDot.classList.add('connected');
-                    statusDot.classList.remove('discovering');
-                    statusText.textContent = 'Connected';
-                } else {
-                    statusDot.classList.remove('connected', 'discovering');
-                    statusText.textContent = 'Disconnected';
-                }
-            }
-
-            escapeHtml(text) {
-                const div = document.createElement('div');
-                div.textContent = text;
-                return div.innerHTML;
-            }
-
-            log(message, level = 'info') {
-                const logsEl = document.getElementById('logs');
-                const logLine = document.createElement('div');
-                logLine.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
-                
-                if (level === 'error') {
-                    logLine.style.color = '#ff6b6b';
-                }
-                
-                logsEl.appendChild(logLine);
-                logsEl.scrollTop = logsEl.scrollHeight;
-                
-                // Keep only last 100 logs
-                while (logsEl.children.length > 100) {
-                    logsEl.removeChild(logsEl.firstChild);
-                }
-            }
+    function sendMessage() {
+        const message = document.getElementById('messageInput').value.trim();
+        if (!message || !isConnected) return;
+        
+        const msgData = {
+            type: "chat",
+            message: message
+        };
+        
+        try {
+            socket.send(JSON.stringify(msgData));
+            addMessage({
+                senderId: clientId,
+                content: message,
+                isOwn: true,
+                timestamp: Date.now()
+            });
+            document.getElementById('messageInput').value = '';
+        } catch (error) {
+            addSystemMessage("Failed to send message", "error");
         }
+    }
 
-        // Initialize when page loads
-        window.addEventListener('load', () => {
-            chatClient = new P2PChatClient();
-            
-            // Set up UI event handlers
-            document.getElementById('sendBtn').addEventListener('click', () => {
-                const input = document.getElementById('messageInput');
-                chatClient.sendMessage(input.value);
-                input.value = '';
-            });
-            
-            document.getElementById('messageInput').addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
-                    document.getElementById('sendBtn').click();
-                }
-            });
+    function addMessage({senderId, content, isOwn, timestamp}, scroll = true) {
+        const messagesContainer = document.getElementById('messagesContainer');
+        const messageEl = document.createElement('div');
+        messageEl.className = `message ${isOwn ? 'own' : ''}`;
+        
+        messageEl.innerHTML = `
+            <div class="message-header">
+                <div class="message-sender">${isOwn ? 'You' : senderId.substring(0, 8)}</div>
+                <div class="message-time">${new Date(timestamp).toLocaleTimeString()}</div>
+            </div>
+            <div class="message-content">${content}</div>
+        `;
+        
+        messagesContainer.appendChild(messageEl);
+        if (scroll) {
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+    }
+
+    function addSystemMessage(content, type = 'info') {
+        const messagesContainer = document.getElementById('messagesContainer');
+        const messageEl = document.createElement('div');
+        messageEl.className = `message system ${type}`;
+        messageEl.innerHTML = `<div class="message-content">${content}</div>`;
+        messagesContainer.appendChild(messageEl);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+
+    // Initialize
+    window.addEventListener('load', () => {
+        // Set up UI
+        document.getElementById('myPeerIdDisplay').textContent = `ID: ${clientId.substring(0, 8)}`;
+        
+        // Set up event listeners
+        document.getElementById('sendBtn').addEventListener('click', sendMessage);
+        document.getElementById('messageInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
         });
-
-        function toggleLogs() {
-            document.getElementById('logs').classList.toggle('visible');
-        }
-
-        function handleKeyPress(event) {
-            if (event.key === 'Enter') {
-                sendMessage();
-            }
-        }
-
-        function sendMessage() {
-            if (chatClient) {
-                const input = document.getElementById('messageInput');
-                chatClient.sendMessage(input.value);
-                input.value = '';
-            }
-        }
-
-        function startDiscovery() {
-            // Not needed in this version since we auto-connect
-        }
-
-        function toggleConnection() {
-            // Not needed in this version since we auto-connect
-        }
+        
+        // Start connection
+        connect();
+    });
     </script>
 </body>
 </html>
+                
